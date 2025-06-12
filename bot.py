@@ -2,28 +2,58 @@ import os
 import discord
 import asyncpg
 import requests
+import random
+import string
 from discord.ext import commands
+from fastapi import FastAPI, Request
+from discord import app_commands
 
 intents = discord.Intents.default()
 intents.message_content = True
 
-bot = commands.Bot(command_prefix="/", intents=intents, help_command =None)
+bot = commands.Bot(command_prefix="/", intents=intents, help_command=None)
 DB_URL = os.getenv("DATABASE_URL")
+
+app = FastAPI()
+
+# Utility function to get Roblox ID from username
+async def get_roblox_id(username):
+    url = "https://users.roblox.com/v1/usernames/users"
+    try:
+        response = requests.post(url, json={"usernames": [username], "excludeBannedUsers": True})
+        data = response.json()
+        if "data" in data and len(data["data"]) > 0:
+            return data["data"][0]["id"]
+    except Exception:
+        return None
+    return None
+
+def generate_code(length=6):
+    return ''.join(random.choices(string.ascii_uppercase + string.digits, k=length))
 
 @bot.event
 async def on_ready():
-    # Connect to database and create table
-    conn = await asyncpg.connect(DB_URL)
-    await conn.execute("""
-    CREATE TABLE IF NOT EXISTS user_links (
-        discord_id TEXT PRIMARY KEY,
-        roblox_id TEXT,
-        roblox_username TEXT
-    )
-    """)
-    await conn.close()
+    async with asyncpg.create_pool(DB_URL) as pool:
+        async with pool.acquire() as conn:
+            await conn.execute("""
+                CREATE TABLE IF NOT EXISTS user_links (
+                    discord_id TEXT PRIMARY KEY,
+                    roblox_id TEXT,
+                    roblox_username TEXT
+                );
+                CREATE TABLE IF NOT EXISTS pending_verifications (
+                    discord_id TEXT PRIMARY KEY,
+                    roblox_id TEXT,
+                    roblox_username TEXT,
+                    code TEXT
+                );
+                CREATE TABLE IF NOT EXISTS verified_users (
+                    discord_id TEXT PRIMARY KEY,
+                    roblox_id TEXT,
+                    roblox_username TEXT
+                );
+            """)
 
-    # Sync slash commands
     try:
         synced = await bot.tree.sync()
         print(f"✅ Synced {len(synced)} slash commands.")
@@ -32,143 +62,103 @@ async def on_ready():
 
     print(f"🟢 Bot is ready. Logged in as {bot.user.name}")
 
-# --- Utility Function ---
-async def get_roblox_id(username):
-    url = "https://users.roblox.com/v1/usernames/users"
-    response = requests.post(url, json={"usernames": [username], "excludeBannedUsers": True})
-    data = response.json()
-    if "data" in data and len(data["data"]) > 0:
-        return data["data"][0]["id"]
-    return None
+@app.post("/verify")
+async def verify_user(request: Request):
+    data = await request.json()
+    print(f"Received verification data: {data}")
+    return {"status": "received"}
 
-# --- SLASH COMMANDS ---
-@bot.command(name="help")
-async def help_command(ctx):
-    embed = discord.Embed(
-        title="🤖 Bot Command Guide",
-        description="Here are the commands you can use with this bot:",
-        color=discord.Color.blue()
-    )
-
-    # Regular user commands
-    embed.add_field(
-        name="🔗 /verify `<roblox_username>`",
-        value="Links your Roblox account to your Discord.",
-        inline=False
-    )
-
-    # Admin commands
-    embed.add_field(
-        name="🕵️ /getdiscord `<roblox_username>`",
-        value="(Admin) Fetches the Discord account linked to a Roblox username.",
-        inline=False
-    )
-    embed.add_field(
-        name="🚫 /unlink `<@discord_user>`",
-        value="(Admin) Unlinks a Discord user's Roblox connection.",
-        inline=False
-    )
-    embed.add_field(
-        name="📋 /listlinked",
-        value="(Admin) Lists all linked Discord–Roblox pairs.",
-        inline=False
-    )
-
-    # Help command info
-    embed.add_field(
-        name="📘 /help",
-        value="Displays this help message.",
-        inline=False
-    )
-
-    embed.set_footer(text="Bot powered by Railway + PostgreSQL")
-
-    await ctx.send(embed=embed)
-
-
-import random
-import string
-
-def generate_code(length=6):
-    return ''.join(random.choices(string.ascii_uppercase + string.digits, k=length))
-
-@bot.tree.command(name="verify", description="Start the verification process with your Roblox account")
+@bot.tree.command(name="verify", description="Start verification with your Roblox account")
 async def verify(interaction: discord.Interaction, roblox_username: str):
     await interaction.response.defer(ephemeral=True)
-
     roblox_id = await get_roblox_id(roblox_username)
+
     if not roblox_id:
         await interaction.followup.send("❌ Roblox username not found.", ephemeral=True)
         return
 
     code = generate_code()
 
-    conn = await asyncpg.connect(DB_URL)
-    await conn.execute("""
-        INSERT INTO pending_verifications (discord_id, roblox_username, roblox_id, code)
-        VALUES ($1, $2, $3, $4)
-        ON CONFLICT (discord_id) DO UPDATE
-        SET code = EXCLUDED.code,
-            roblox_username = EXCLUDED.roblox_username,
-            roblox_id = EXCLUDED.roblox_id
-    """, str(interaction.user.id), roblox_username, str(roblox_id), code)
-    await conn.close()
-    game_link = "https://www.roblox.com/games/"
+    async with asyncpg.create_pool(DB_URL) as pool:
+        async with pool.acquire() as conn:
+            await conn.execute("""
+                INSERT INTO pending_verifications (discord_id, roblox_username, roblox_id, code)
+                VALUES ($1, $2, $3, $4)
+                ON CONFLICT (discord_id) DO UPDATE SET
+                    roblox_username = EXCLUDED.roblox_username,
+                    roblox_id = EXCLUDED.roblox_id,
+                    code = EXCLUDED.code
+            """, str(interaction.user.id), roblox_username, str(roblox_id), code)
+
     await interaction.followup.send(
-        f"✅ To verify your Roblox account `{roblox_username}`, please join the **Verification Game `{game_link}`** and enter this code: **`{code}`**.\n\n🔒 This message is only visible to you.",
-        ephemeral=True
+        f"✅ Please join the Roblox verification game and enter this code: **`{code}`**.", ephemeral=True
     )
 
-@bot.tree.command(name="getdiscord", description="(Admin) Get the Discord user linked to a Roblox username")
-@commands.has_permissions(administrator=True)
+@bot.tree.command(name="confirmverify", description="Complete verification after using code in-game")
+async def confirmverify(interaction: discord.Interaction):
+    discord_id = str(interaction.user.id)
+
+    async with asyncpg.create_pool(DB_URL) as pool:
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow("SELECT roblox_id, roblox_username FROM verified_users WHERE discord_id = $1", discord_id)
+            if row:
+                await conn.execute("""
+                    INSERT INTO user_links (discord_id, roblox_id, roblox_username)
+                    VALUES ($1, $2, $3)
+                    ON CONFLICT (discord_id) DO UPDATE SET
+                        roblox_id = EXCLUDED.roblox_id,
+                        roblox_username = EXCLUDED.roblox_username
+                """, discord_id, row["roblox_id"], row["roblox_username"])
+                await interaction.response.send_message(f"🎉 Verified as `{row['roblox_username']}`!", ephemeral=True)
+            else:
+                await interaction.response.send_message("❌ Could not verify. Please ensure you completed in-game verification.", ephemeral=True)
+
+@bot.tree.command(name="getdiscord", description="(Admin) Get Discord user linked to Roblox username")
+@app_commands.checks.has_permissions(administrator=True)
 async def getdiscord(interaction: discord.Interaction, roblox_username: str):
     await interaction.response.defer()
-    conn = await asyncpg.connect(DB_URL)
-    row = await conn.fetchrow("SELECT discord_id FROM user_links WHERE roblox_username = $1", roblox_username)
-    await conn.close()
-    if row:
-        user = await bot.fetch_user(int(row["discord_id"]))
-        await interaction.followup.send(f"🔍 Discord user for `{roblox_username}` is {user.mention}")
-    else:
-        await interaction.followup.send("❌ No user found.")
+    async with asyncpg.create_pool(DB_URL) as pool:
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow("SELECT discord_id FROM user_links WHERE roblox_username = $1", roblox_username)
+            if row:
+                user = await bot.fetch_user(int(row["discord_id"]))
+                await interaction.followup.send(f"🔍 Discord user for `{roblox_username}` is {user.mention}")
+            else:
+                await interaction.followup.send("❌ No user found.")
 
-@bot.tree.command(name="unlink", description="(Admin) Unlink a user’s Roblox account")
-@commands.has_permissions(administrator=True)
+@bot.tree.command(name="unlink", description="(Admin) Unlink a user's Roblox account")
+@app_commands.checks.has_permissions(administrator=True)
 async def unlink(interaction: discord.Interaction, discord_user: discord.User):
     await interaction.response.defer()
-    conn = await asyncpg.connect(DB_URL)
-    result = await conn.execute("DELETE FROM user_links WHERE discord_id = $1", str(discord_user.id))
-    await conn.close()
-    if result.endswith("0"):
-        await interaction.followup.send("❌ No link found to delete.")
-    else:
-        await interaction.followup.send(f"✅ Unlinked Roblox account for {discord_user.mention}")
+    async with asyncpg.create_pool(DB_URL) as pool:
+        async with pool.acquire() as conn:
+            result = await conn.execute("DELETE FROM user_links WHERE discord_id = $1", str(discord_user.id))
+            if result.endswith("0"):
+                await interaction.followup.send("❌ No link found to delete.")
+            else:
+                await interaction.followup.send(f"✅ Unlinked Roblox account for {discord_user.mention}")
 
 @bot.tree.command(name="listlinked", description="(Admin) List all linked users")
-@commands.has_permissions(administrator=True)
+@app_commands.checks.has_permissions(administrator=True)
 async def listlinked(interaction: discord.Interaction):
     await interaction.response.defer()
-    conn = await asyncpg.connect(DB_URL)
-    rows = await conn.fetch("SELECT discord_id, roblox_username FROM user_links")
-    await conn.close()
+    async with asyncpg.create_pool(DB_URL) as pool:
+        async with pool.acquire() as conn:
+            rows = await conn.fetch("SELECT discord_id, roblox_username FROM user_links")
+            if not rows:
+                await interaction.followup.send("📭 No linked accounts.")
+                return
+            msg = "**Linked Users:**\n"
+            msg += "\n".join(f"<@{row['discord_id']}> ↔️ `{row['roblox_username']}`" for row in rows)
+            await interaction.followup.send(msg[:2000])
 
-    if not rows:
-        await interaction.followup.send("📭 No linked accounts.")
-        return
-
-    message = "**Linked Users:**\n"
-    for row in rows:
-        user_id = row["discord_id"]
-        roblox_user = row["roblox_username"]
-        message += f"<@{user_id}> ↔️ `{roblox_user}`\n"
-
-    await interaction.followup.send(message[:2000])  # Discord message limit
-
-# --- Error Logging ---
+# Optional: Handle command errors
 @bot.event
 async def on_command_error(ctx, error):
-    await ctx.send(f"⚠️ Error: {str(error)}")
-    raise error
+    if isinstance(error, commands.MissingPermissions):
+        await ctx.send("🚫 You don't have permission to use this command.")
+    else:
+        await ctx.send(f"⚠️ Error: {error}")
 
 # --- Run Bot ---
 bot.run(os.getenv("TOKEN"))
