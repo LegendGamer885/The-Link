@@ -113,9 +113,9 @@ async def verify(interaction: discord.Interaction, roblox_username: str):
             roblox_id = EXCLUDED.roblox_id
     """, str(interaction.user.id), roblox_username, str(roblox_id), code)
     await conn.close()
-
+    game_link = "https://www.roblox.com/games/"
     await interaction.followup.send(
-        f"✅ To verify your Roblox account `{roblox_username}`, please join the **Verification Game `{gamelink}`** and enter this code: **`{code}`**.\n\n🔒 This message is only visible to you.",
+        f"✅ To verify your Roblox account `{roblox_username}`, please join the **Verification Game `{game_link}`** and enter this code: **`{code}`**.\n\n🔒 This message is only visible to you.",
         ephemeral=True
     )
 
