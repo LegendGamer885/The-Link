@@ -96,7 +96,7 @@ async def verify(interaction: discord.Interaction, roblox_username: str):
                     roblox_id = EXCLUDED.roblox_id,
                     code = EXCLUDED.code
             """, str(interaction.user.id), roblox_username, str(roblox_id), code)
-    game_link = 
+    game_link = ""
 
     await interaction.followup.send(
         f"✅ Please join the Roblox verification game {game_link} and enter this code: **`{code}`**.", ephemeral=True
