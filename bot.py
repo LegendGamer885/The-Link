@@ -115,7 +115,7 @@ async def verify(interaction: discord.Interaction, roblox_username: str):
     await conn.close()
 
     await interaction.followup.send(
-        f"✅ To verify your Roblox account `{roblox_username}`, please join the **verification game {gamelink}** and enter this code: **`{code}`**.\n\n🔒 This message is only visible to you.",
+        f"✅ To verify your Roblox account `{roblox_username}`, please join the **Verification Game `{gamelink}`** and enter this code: **`{code}`**.\n\n🔒 This message is only visible to you.",
         ephemeral=True
     )
 
