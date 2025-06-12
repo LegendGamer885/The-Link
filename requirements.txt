@@ -3,3 +3,4 @@ requests
 aiosqlite
 asyncpg
 fastapi
+threading
