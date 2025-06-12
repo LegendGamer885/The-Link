@@ -76,7 +76,7 @@ async def help_command(ctx):
 
     # Help command info
     embed.add_field(
-        name="📘 !help",
+        name="📘 /help",
         value="Displays this help message.",
         inline=False
     )
