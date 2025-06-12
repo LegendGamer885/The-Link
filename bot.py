@@ -86,23 +86,38 @@ async def help_command(ctx):
     await ctx.send(embed=embed)
 
 
-@bot.tree.command(name="verify", description="Link your Roblox account to your Discord")
+import random
+import string
+
+def generate_code(length=6):
+    return ''.join(random.choices(string.ascii_uppercase + string.digits, k=length))
+
+@bot.tree.command(name="verify", description="Start the verification process with your Roblox account")
 async def verify(interaction: discord.Interaction, roblox_username: str):
-    await interaction.response.defer()
+    await interaction.response.defer(ephemeral=True)
+
     roblox_id = await get_roblox_id(roblox_username)
-    if roblox_id:
-        conn = await asyncpg.connect(DB_URL)
-        await conn.execute("""
-            INSERT INTO user_links (discord_id, roblox_id, roblox_username)
-            VALUES ($1, $2, $3)
-            ON CONFLICT (discord_id) DO UPDATE SET
-                roblox_id = EXCLUDED.roblox_id,
-                roblox_username = EXCLUDED.roblox_username
-        """, str(interaction.user.id), str(roblox_id), roblox_username)
-        await conn.close()
-        await interaction.followup.send(f"✅ Linked Roblox user `{roblox_username}` successfully.")
-    else:
-        await interaction.followup.send("❌ Roblox username not found.")
+    if not roblox_id:
+        await interaction.followup.send("❌ Roblox username not found.", ephemeral=True)
+        return
+
+    code = generate_code()
+
+    conn = await asyncpg.connect(DB_URL)
+    await conn.execute("""
+        INSERT INTO pending_verifications (discord_id, roblox_username, roblox_id, code)
+        VALUES ($1, $2, $3, $4)
+        ON CONFLICT (discord_id) DO UPDATE
+        SET code = EXCLUDED.code,
+            roblox_username = EXCLUDED.roblox_username,
+            roblox_id = EXCLUDED.roblox_id
+    """, str(interaction.user.id), roblox_username, str(roblox_id), code)
+    await conn.close()
+
+    await interaction.followup.send(
+        f"✅ To verify your Roblox account `{roblox_username}`, please join the **verification game {gamelink}** and enter this code: **`{code}`**.\n\n🔒 This message is only visible to you.",
+        ephemeral=True
+    )
 
 @bot.tree.command(name="getdiscord", description="(Admin) Get the Discord user linked to a Roblox username")
 @commands.has_permissions(administrator=True)
