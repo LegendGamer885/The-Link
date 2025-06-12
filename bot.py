@@ -42,6 +42,49 @@ async def get_roblox_id(username):
     return None
 
 # --- SLASH COMMANDS ---
+@bot.command(name="help")
+async def help_command(ctx):
+    embed = discord.Embed(
+        title="🤖 Bot Command Guide",
+        description="Here are the commands you can use with this bot:",
+        color=discord.Color.blue()
+    )
+
+    # Regular user commands
+    embed.add_field(
+        name="🔗 /verify `<roblox_username>`",
+        value="Links your Roblox account to your Discord.",
+        inline=False
+    )
+
+    # Admin commands
+    embed.add_field(
+        name="🕵️ /getdiscord `<roblox_username>`",
+        value="(Admin) Fetches the Discord account linked to a Roblox username.",
+        inline=False
+    )
+    embed.add_field(
+        name="🚫 /unlink `<@discord_user>`",
+        value="(Admin) Unlinks a Discord user's Roblox connection.",
+        inline=False
+    )
+    embed.add_field(
+        name="📋 /listlinked",
+        value="(Admin) Lists all linked Discord–Roblox pairs.",
+        inline=False
+    )
+
+    # Help command info
+    embed.add_field(
+        name="📘 !help",
+        value="Displays this help message.",
+        inline=False
+    )
+
+    embed.set_footer(text="Bot powered by Railway + PostgreSQL")
+
+    await ctx.send(embed=embed)
+
 
 @bot.tree.command(name="verify", description="Link your Roblox account to your Discord")
 async def verify(interaction: discord.Interaction, roblox_username: str):
