@@ -7,6 +7,7 @@ import string
 from discord.ext import commands
 from fastapi import FastAPI, Request
 from discord import app_commands
+import threading
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -67,6 +68,12 @@ async def verify_user(request: Request):
     data = await request.json()
     print(f"Received verification data: {data}")
     return {"status": "received"}
+    
+def run_api():
+    uvicorn.run(app, host="0.0.0.0", port=8000)
+
+threading.Thread(target=run_api).start()
+
 
 @bot.tree.command(name="verify", description="Start verification with your Roblox account")
 async def verify(interaction: discord.Interaction, roblox_username: str):
@@ -89,9 +96,10 @@ async def verify(interaction: discord.Interaction, roblox_username: str):
                     roblox_id = EXCLUDED.roblox_id,
                     code = EXCLUDED.code
             """, str(interaction.user.id), roblox_username, str(roblox_id), code)
+    game_link = 
 
     await interaction.followup.send(
-        f"✅ Please join the Roblox verification game and enter this code: **`{code}`**.", ephemeral=True
+        f"✅ Please join the Roblox verification game {game_link} and enter this code: **`{code}`**.", ephemeral=True
     )
 
 @bot.tree.command(name="confirmverify", description="Complete verification after using code in-game")
