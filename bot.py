@@ -1,5 +1,6 @@
 from discord.ext import commands
 import discord
+import os
 import aiosqlite
 import requests
 
@@ -21,7 +22,7 @@ async def on_ready():
         )
         """)
         await db.commit()
-    print(f'Logged in as {bot.user.name}')
+    print(f"Logged in as {bot.user.name}")
 
 # Get Roblox user ID from username using Roblox API
 async def get_roblox_id(username):
