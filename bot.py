@@ -3,10 +3,14 @@ import discord
 import os
 import aiosqlite
 import requests
+import asyncpg
+
+async def get_db_connection():
+    return await asyncpg.connect(os.getenv("DATABASE_URL"))
 
 intents = discord.Intents.default()
 intents.message_content = True
-bot = commands.Bot(command_prefix='!')
+bot = commands.Bot(command_prefix='/')
 
 DB_FILE = "links.db"
 
